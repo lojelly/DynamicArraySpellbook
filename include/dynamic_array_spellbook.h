@@ -11,6 +11,7 @@ typedef struct dynas_int_arr
 	int *data;
 	size_t size;
 	size_t capacity;
+	bool alloc_failure;
 } dynas_int_arr;
 /**
   Dynamic array holding floats.
@@ -20,6 +21,7 @@ typedef struct dynas_float_arr
 	float *data;
 	size_t size;
 	size_t capacity;
+	bool alloc_failure;
 } dynas_float_arr;
 /**
   Dynamic array holding doubles.
@@ -29,6 +31,7 @@ typedef struct dynas_double_arr
 	double *data;
 	size_t size;
 	size_t capacity;
+	bool alloc_failure;
 } dynas_double_arr;
 /**
   Dynamic array holding characters.
@@ -41,6 +44,7 @@ typedef struct dynas_char_arr
 	char *data;
 	size_t size;
 	size_t capacity;
+	bool alloc_failure;
 } dynas_char_arr;
 /**
   Dynamic array holding strings.
@@ -50,6 +54,7 @@ typedef struct dynas_string_arr
 	char **data;
 	size_t size;
 	size_t capacity;
+	bool alloc_failure;
 } dynas_string_arr;
 
 /**
@@ -72,9 +77,17 @@ typedef struct dynas_string_arr
 */
 #define dynas_init(dynamic_array) \
 	do { \
-		(dynamic_array) -> size = 0; \
-		(dynamic_array) -> capacity = 10; \
-		(dynamic_array) -> data = calloc((dynamic_array) -> capacity * sizeof(*(dynamic_array) -> data), sizeof(*(dynamic_array) -> data)); \
+		(dynamic_array)->size = 0; \
+		(dynamic_array)->capacity = 10; \
+		(dynamic_array)->data = calloc((dynamic_array)->capacity * sizeof(*(dynamic_array)->data), sizeof(*(dynamic_array)->data)); \
+		if(!(dynamic_array)->data) \
+		{ \
+			(dynamic_array)->alloc_failure = true; \
+			(dynamic_array)->data = NULL; \
+			(dynamic_array)->capacity = 0; \
+			break; \
+		} \
+		(dynamic_array)->alloc_failure = false; \
 	} while(0)
 
 /**
@@ -84,10 +97,11 @@ typedef struct dynas_string_arr
 */
 #define dynas_free(dynamic_array) \
 	do { \
-		(dynamic_array) -> size = 0; \
-		(dynamic_array) -> capacity = 10; \
-		free((dynamic_array) -> data); \
-		(dynamic_array) -> data = NULL; \
+		(dynamic_array)->size = 0; \
+		(dynamic_array)->capacity = 10; \
+		free((dynamic_array)->data); \
+		(dynamic_array)->data = NULL; \
+		(dynamic_array)->alloc_failure = false; \
 	} while(0)
 
 /**
@@ -98,7 +112,7 @@ typedef struct dynas_string_arr
   Make sure the index is valid before
   calling this macro, as it does not validate the index.
 */
-#define dynas_get(dynamic_array, idx) *((dynamic_array) -> data + (idx))
+#define dynas_get(dynamic_array, idx) *((dynamic_array)->data + (idx))
 
 /**
   This macro determines if the given dynamic array needs
@@ -112,20 +126,27 @@ typedef struct dynas_string_arr
 */
 #define dynas_expand(dynamic_array) \
 	do { \
-		if((dynamic_array) -> size >= (dynamic_array) -> capacity) \
+		if(!(dynamic_array)->alloc_failure && (dynamic_array)->size >= (dynamic_array)->capacity) \
 		{ \
-			if((dynamic_array) -> capacity * 2 <= SIZE_MAX) \
+			if((dynamic_array)->capacity <= SIZE_MAX / 2) \
 			{ \
-				(dynamic_array) -> capacity *= 2; \
-				__typeof__((dynamic_array) -> data) ptr = realloc((dynamic_array) -> data, (dynamic_array) -> capacity * sizeof(*(dynamic_array) -> data)); \
-				if(ptr) \
-					(dynamic_array) -> data = ptr; \
-				else \
+				size_t new_cap = (dynamic_array)->capacity * 2; \
+				if(new_cap > SIZE_MAX / sizeof(*(dynamic_array)->data)) \
 				{ \
-					dynas_free(dynamic_array); \
-					(dynamic_array) -> data = NULL; \
+					(dynamic_array)->alloc_failure = true; \
+					break; \
 				} \
+				__typeof__((dynamic_array)->data) ptr = realloc((dynamic_array)->data, (dynamic_array)->capacity * sizeof(*(dynamic_array)->data)); \
+				if(ptr) \
+				{ \
+					(dynamic_array)->capacity = new_cap; \
+					(dynamic_array)->data = ptr; \
+				} \
+				else \
+					(dynamic_array)->alloc_failure = true; \
 			} \
+			else \
+				(dynamic_array)->alloc_failure = true; \
 		} \
 	} while(0)
 
@@ -139,10 +160,10 @@ typedef struct dynas_string_arr
 #define dynas_add(dynamic_array, item) \
 	do { \
 		dynas_expand(dynamic_array); \
-		if(!(dynamic_array) -> data) \
+		if((dynamic_array)->alloc_failure) \
 			break; \
-		(dynamic_array) -> data[(dynamic_array) -> size] = (item); \
-		(dynamic_array) -> size++; \
+		(dynamic_array)->data[(dynamic_array)->size] = (item); \
+		(dynamic_array)->size++; \
 	} while(0)
 
 /**
@@ -153,12 +174,12 @@ typedef struct dynas_string_arr
   @note The 2nd argument must be the type of elements
   the array stores. For example, for an integer
   array, the arguments would look like this:
-  (int_arr, int, 1, 2, 3, 4, ...).
+  (int_arr, 1, 2, 3, 4, ...).
 */
 #define dynas_add_n(dynamic_array, ...) \
 	do { \
-		__typeof__(*((dynamic_array) -> data)) dynas_args[] = { __VA_ARGS__ }; \
-		int dynas_args_len = sizeof dynas_args / sizeof(__typeof__(*((dynamic_array) -> data))); \
+		__typeof__(*((dynamic_array)->data)) dynas_args[] = { __VA_ARGS__ }; \
+		int dynas_args_len = sizeof dynas_args / sizeof(__typeof__(*((dynamic_array)->data))); \
 		for(size_t i = 0; i < dynas_args_len; ++i) \
 			dynas_add(dynamic_array, dynas_args[i]); \
 	} while(0)
@@ -206,11 +227,11 @@ typedef struct dynas_string_arr
 #define dynas_insert(dynamic_array, idx, item) \
 	do { \
 		dynas_expand(dynamic_array); \
-		if(!(dynamic_array) -> data) \
+		if((dynamic_array)->alloc_failure) \
 			break; \
-		memmove((dynamic_array) -> data + (idx) + 1, (dynamic_array) -> data + (idx), ((dynamic_array) -> size - (idx)) * sizeof(*(dynamic_array) -> data)); \
-		(dynamic_array) -> data[(idx)] = (item); \
-		(dynamic_array) -> size++; \
+		memmove((dynamic_array)->data + (idx) + 1, (dynamic_array)->data + (idx), ((dynamic_array)->size - (idx)) * sizeof(*(dynamic_array)->data)); \
+		(dynamic_array)->data[(idx)] = (item); \
+		(dynamic_array)->size++; \
 	} while(0)
 
 /**
@@ -228,7 +249,7 @@ typedef struct dynas_string_arr
 */
 #define dynas_set(dynamic_array, idx, item) \
 	do { \
-		(dynamic_array) -> data[(idx)] = (item); \
+		(dynamic_array)->data[(idx)] = (item); \
 	} while(0)
 
 /**
@@ -347,8 +368,8 @@ typedef struct dynas_string_arr
 */
 #define dynas_remove_at(dynamic_array, idx) \
 	do { \
-		memmove((dynamic_array) -> data + (idx), (dynamic_array) -> data + (idx) + 1, ((dynamic_array) -> size - (idx) - 1) * sizeof(*(dynamic_array) -> data)); \
-		(dynamic_array) -> size--; \
+		memmove((dynamic_array)->data + (idx), (dynamic_array)->data + (idx) + 1, ((dynamic_array)->size - (idx) - 1) * sizeof(*(dynamic_array)->data)); \
+		(dynamic_array)->size--; \
 	} while(0)
 
 /**
@@ -458,9 +479,9 @@ typedef struct dynas_string_arr
 #define dynas_find_item(dynamic_array, item, result) \
 	do { \
 		(result) = -1; \
-		for(size_t i = 0; i < (dynamic_array) -> size; ++i) \
+		for(size_t i = 0; i < (dynamic_array)->size; ++i) \
 		{ \
-			if((dynamic_array) -> data[i] == (item)) \
+			if((dynamic_array)->data[i] == (item)) \
 			{ \
 				(result) = i; \
 				break; \
@@ -481,9 +502,9 @@ typedef struct dynas_string_arr
 #define dynas_find_str(dynamic_array, str, result) \
 	do { \
 		(result) = -1; \
-		for(size_t i = 0; i < (dynamic_array) -> size; ++i) \
+		for(size_t i = 0; i < (dynamic_array)->size; ++i) \
 		{ \
-			if(strcmp(str, (dynamic_array) -> data[i]) == 0) \
+			if(strcmp(str, (dynamic_array)->data[i]) == 0) \
 			{ \
 				(result) = i; \
 				break; \
@@ -499,11 +520,11 @@ typedef struct dynas_string_arr
 */
 #define dynas_clear(dynamic_array) \
 	do { \
-		for(size_t i = 0; i < (dynamic_array) -> size; ++i) \
+		for(size_t i = 0; i < (dynamic_array)->size; ++i) \
 		{ \
-			(dynamic_array) -> data[i] = 0; \
+			(dynamic_array)->data[i] = 0; \
 		} \
-		(dynamic_array) -> size = 0; \
+		(dynamic_array)->size = 0; \
 	} while(0)
 
 /**
@@ -530,7 +551,7 @@ typedef struct dynas_string_arr
 #define dynas_get_sub_arr(target_dynamic_array, start_idx, end_idx, result_dynamic_array) \
 	do { \
 		size_t dynas_ptr_range = (end_idx) - (start_idx); \
-		size_t dynas_ptr_range_bytes = dynas_ptr_range * sizeof(*((target_dynamic_array) -> data)); \
-		memmove((result_dynamic_array) -> data, (target_dynamic_array) -> data + (start_idx), dynas_ptr_range_bytes); \
-		(result_dynamic_array) -> size += dynas_ptr_range; \
+		size_t dynas_ptr_range_bytes = dynas_ptr_range * sizeof(*((target_dynamic_array)->data)); \
+		memmove((result_dynamic_array)->data, (target_dynamic_array)->data + (start_idx), dynas_ptr_range_bytes); \
+		(result_dynamic_array)->size += dynas_ptr_range; \
 	} while(0)
