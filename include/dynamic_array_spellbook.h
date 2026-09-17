@@ -79,7 +79,7 @@ typedef struct dynas_string_arr
 	do { \
 		(dynamic_array)->size = 0; \
 		(dynamic_array)->capacity = 10; \
-		(dynamic_array)->data = calloc((dynamic_array)->capacity * sizeof(*(dynamic_array)->data), sizeof(*(dynamic_array)->data)); \
+		(dynamic_array)->data = calloc((dynamic_array)->capacity, sizeof(*(dynamic_array)->data)); \
 		if(!(dynamic_array)->data) \
 		{ \
 			(dynamic_array)->alloc_failure = true; \
@@ -136,7 +136,7 @@ typedef struct dynas_string_arr
 					(dynamic_array)->alloc_failure = true; \
 					break; \
 				} \
-				__typeof__((dynamic_array)->data) ptr = realloc((dynamic_array)->data, (dynamic_array)->capacity * sizeof(*(dynamic_array)->data)); \
+				__typeof__((dynamic_array)->data) ptr = realloc((dynamic_array)->data, new_cap * sizeof(*(dynamic_array)->data)); \
 				if(ptr) \
 				{ \
 					(dynamic_array)->capacity = new_cap; \
